@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SnapPro Studio</title>
+    
+    <script src="https://tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com">
+    <script src="https://unpkg.com"></script>
+
+    <style>
+        @import url('https://googleapis.com');
+        body { background: #020617; font-family: 'Inter', sans-serif; color: #f8fafc; overflow: hidden; height: 100vh; }
+        .glass-card { background: rgba(30, 41, 59, 0.5); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        
+        .btn-resp { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0; }
+        .btn-resp:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-resp:active { transform: scale(0.95); }
+        
+        /* Fixed workspace to prevent clipping */
+        .workspace-container { 
+            position: relative;
+            overflow: auto; /* Enables scrolling when zoomed */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        #imageWrapper { 
+            transition: transform 0.1s ease-out; 
+            transform-origin: center center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #mainImage { 
+            display: block; 
+            max-width: 90%; /* Initial breathing room */
+            max-height: 80vh; 
+        }
+        
+        input[type=range] { accent-color: #3b82f6; cursor: pointer; }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4 md:p-10">
+
+    <main class="glass-card w-full max-w-7xl rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row h-[90vh] shadow-2xl">
+        <!-- Sidebar: Fixed width to prevent jumping -->
+        <aside class="w-full md:w-80 p-8 border-r border-slate-800 flex flex-col justify-between bg-slate-900/60 z-10 flex-shrink-0">
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight mb-1">SnapPro <span class="text-blue-500">.</span></h1>
+                <p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-10">Instant Capture</p>
+                
+                <div class="space-y-6">
+                    <button id="captureBtn" class="btn-resp w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-900/30">
+                        📸 New Capture
+                    </button>
+
+                    <div id="resizeControl" class="hidden space-y-3 pt-6 border-t border-slate-800">
+                        <div class="flex justify-between items-center">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-slate-400">Zoom Canvas</label>
+                            <span id="zoomVal" class="text-[10px] text-blue-400 font-mono">100%</span>
+                        </div>
+                        <input type="range" id="zoomSlider" min="0.5" max="2.5" step="0.05" value="1" class="w-full h-1 bg-slate-800 rounded-lg appearance-none">
+                    </div>
+
+                    <div id="editTools" class="hidden">
+                        <button id="applyCropBtn" class="btn-resp w-full bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-semibold border border-white/10">
+                            ✂️ Confirm Crop
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="exportSection" class="hidden">
+                <button id="downloadBtn" class="btn-resp w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-900/30">
+                    ⬇️ Download
+                </button>
+            </div>
+        </aside>
+
+        <!-- Workspace: Scrollable -->
+        <section class="flex-1 bg-slate-950/40 relative overflow-hidden">
+            <div id="emptyState" class="absolute inset-0 flex items-center justify-center opacity-30">
+                <p class="text-slate-400 text-sm tracking-widest uppercase italic">Awaiting Capture...</p>
+            </div>
+            
+            <div id="viewport" class="workspace-container hidden">
+                <div id="imageWrapper">
+                    <img id="mainImage">
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        window.addEventListener('load', () => {
+            const captureBtn = document.getElementById('captureBtn');
+            const applyCropBtn = document.getElementById('applyCropBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const mainImg = document.getElementById('mainImage');
+            const viewport = document.getElementById('viewport');
+            const emptyState = document.getElementById('emptyState');
+            const editTools = document.getElementById('editTools');
+            const exportSection = document.getElementById('exportSection');
+            const resizeControl = document.getElementById('resizeControl');
+            const zoomSlider = document.getElementById('zoomSlider');
+            const zoomVal = document.getElementById('zoomVal');
+            const imageWrapper = document.getElementById('imageWrapper');
+
+            let cropper = null;
+
+            zoomSlider.oninput = (e) => {
+                const val = e.target.value;
+                zoomVal.innerText = `${Math.round(val * 100)}%`;
+                imageWrapper.style.transform = `scale(${val})`;
+            };
+
+            captureBtn.onclick = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        canvas.getContext('2d').drawImage(video, 0, 0);
+                        
+                        if (cropper) cropper.destroy();
+
+                        mainImg.src = canvas.toDataURL('image/png');
+                        emptyState.classList.add('hidden');
+                        viewport.classList.remove('hidden');
+                        editTools.classList.remove('hidden');
+                        resizeControl.classList.remove('hidden');
+                        exportSection.classList.add('hidden');
+                        
+                        // Reset Zoom on new capture
+                        zoomSlider.value = 1;
+                        zoomVal.innerText = "100%";
+                        imageWrapper.style.transform = "scale(1)";
+
+                        mainImg.onload = () => {
+                            cropper = new Cropper(mainImg, { 
+                                viewMode: 1, 
+                                autoCropArea: 0.8, 
+                                background: false,
+                                responsive: true 
+                            });
+                            mainImg.onload = null;
+                        };
+                        
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+                } catch (err) { console.warn("Capture cancelled"); }
+            };
+
+            applyCropBtn.onclick = () => {
+                if (!cropper) return;
+                const canvas = cropper.getCroppedCanvas();
+                mainImg.src = canvas.toDataURL('image/png');
+                cropper.destroy();
+                cropper = null;
+                editTools.classList.add('hidden');
+                resizeControl.classList.add('hidden');
+                exportSection.classList.remove('hidden');
+            };
+
+            downloadBtn.onclick = () => {
+                const now = new Date();
+                const ts = now.toLocaleString('en-US', { 
+                    month: 'short', day: 'numeric', year: 'numeric', 
+                    hour: 'numeric', minute: '2-digit', hour12: true 
+                }).replace(/ /g, '-').replace(/,/g, '').replace(/:/g, '-');
+
+                const link = document.createElement('a');
+                link.download = `Snap_${ts}.png`;
+                link.href = mainImg.src;
+                link.click();
+            };
+        });
+    </script>
+</body>
+</html>
