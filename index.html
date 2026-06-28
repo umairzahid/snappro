@@ -83,6 +83,7 @@
             </div>
 
             <div id="exportSection" class="hidden">
+                <button id="copyBtn">Copy to Clipboard</button>
                 <button id="downloadBtn" class="btn-resp w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-900/30">
                     ⬇️ Download
                 </button>
@@ -97,7 +98,7 @@
             
             <div id="viewport" class="workspace-container hidden">
                 <div id="imageWrapper">
-                    <img id="mainImage">
+                    <img id="mainImage" crossorigin="anonymous">
                 </div>
             </div>
         </section>
@@ -191,6 +192,35 @@
                 link.href = mainImg.src;
                 link.click();
             };
+
+            document.getElementById('copyBtn').addEventListener('click', async () => {
+                const imgElement = document.getElementById('mainImage');
+                const button = document.getElementById('copyBtn');
+                
+                try {
+                    // 1. Fetch the image data using the source URL
+                    const response = await fetch(imgElement.src);
+                    const blob = await response.blob();
+                    
+                    // 2. Format the blob correctly for the clipboard
+                    // Note: Browsers best support the 'image/png' format for writing
+                    const clipboardItem = new ClipboardItem({ [blob.type]: blob });
+                    
+                    // 3. Write the image blob to the clipboard
+                    await navigator.clipboard.write([clipboardItem]);
+                    
+                    // 4. UI feedback for the user
+                    button.innerText = "✓ Image Copied!";
+                    setTimeout(() => button.innerText = "Copy to Clipboard", 2000);
+                    
+                } catch (error) {
+                    console.error('Failed to copy image: ', error);
+                    button.innerText = "❌ Copy Failed";
+                    setTimeout(() => button.innerText = "Copy to Clipboard", 2000);
+                    alert("Could not copy image. Ensure the image is hosted on the same domain or allows CORS.");
+                }
+                });
+            
         });
     </script>
 </body>
